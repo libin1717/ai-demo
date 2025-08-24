@@ -1,0 +1,13 @@
+# 应用服务 WEB 访问端口
+server.port: 8081
+
+spring:
+  application.name: ai-deepseek
+  profiles:
+    active: dev
+  ai:
+    deepseek:
+      api-key: ${DEEPSEEK-API-KEY}
+      chat:
+        options:
+          model: deepseek-chat
