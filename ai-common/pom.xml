@@ -8,31 +8,20 @@
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
-    <artifactId>ai-deepseek</artifactId>
+    <artifactId>ai-common</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>ai-deepseek</name>
-    <description>ai-deepseek</description>
+    <name>ai-common</name>
+    <description>ai-common</description>
     <packaging>jar</packaging>
 
     <properties>
         <java.version>17</java.version>
     </properties>
-
     <dependencies>
-        <dependency>
-            <groupId>com.libin.spring-ai</groupId>
-            <artifactId>ai-common</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
-        </dependency>
 
-        <!--deepSeek-->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-deepseek</artifactId>
-        </dependency>
     </dependencies>
 
-  <!--  <build>
+   <!-- <build>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

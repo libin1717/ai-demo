@@ -1,6 +1,7 @@
-package com.libin.springai.aideepseek;
+package com.libin.springai.aideepseek.controller;
 
 //import org.springframework.ai.chat.client.ChatClient;
+import com.libin.springai.aicommon.dto.ResultDto;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,34 +20,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/deepseek/chat")
 public class DeepSeekChatController {
 
-   /* private static final String DEFAULT_PROMPT = "你是一个聊天助手，请根据用户问题，进行简短的回答！";
-
-    private ChatClient chatClient;
-
-
-
-    public DeepSeekChatController(ChatClient.Builder builder) {
-        this.chatClient = builder
-//                .defaultSystem(DEFAULT_PROMPT)
-                .build();
-    }
-
-
-    @GetMapping("/modelChatForOpenAi")
-    public String simpleChat(@RequestParam String message) {
-        String content = chatClient.prompt(message).call().content();
-        System.out.println(content);
-        return content;
-    }*/
-
     @Autowired
     private DeepSeekChatModel deepSeekChatModel;
 
-    @GetMapping("/modelChatForDeepseek")
-    public String simpleChat2(@RequestParam String message) {
+    @GetMapping("/deepseekChatCall")
+    public ResultDto<Object> simpleChat2(@RequestParam String message) {
         String content = deepSeekChatModel.call(message);
         System.out.println(content);
-        return content;
+        return ResultDto.success(content);
     }
 
 
