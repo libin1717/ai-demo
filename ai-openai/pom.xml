@@ -20,6 +20,12 @@
     </properties>
     <dependencies>
 
+        <dependency>
+            <groupId>com.libin.spring-ai</groupId>
+            <artifactId>ai-common</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
+
         <!--open AI-->
         <dependency>
             <groupId>org.springframework.ai</groupId>
@@ -27,14 +33,5 @@
         </dependency>
 
     </dependencies>
-
-  <!--  <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>-->
 
 </project>
