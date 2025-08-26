@@ -12,11 +12,19 @@
     <version>0.0.1-SNAPSHOT</version>
     <name>ai-openai</name>
     <description>ai-openai</description>
+    <packaging>jar</packaging>
+
 
     <properties>
         <java.version>17</java.version>
     </properties>
     <dependencies>
+
+        <dependency>
+            <groupId>com.libin.spring-ai</groupId>
+            <artifactId>ai-common</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
 
         <!--open AI-->
         <dependency>
@@ -25,14 +33,5 @@
         </dependency>
 
     </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
 
 </project>

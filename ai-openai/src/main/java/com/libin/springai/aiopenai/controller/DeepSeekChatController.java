@@ -1,4 +1,4 @@
-package com.libin.springai.aiopenai;
+package com.libin.springai.aiopenai.controller;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.GetMapping;
