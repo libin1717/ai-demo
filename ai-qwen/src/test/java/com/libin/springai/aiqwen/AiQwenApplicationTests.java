@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.image.ImagePrompt;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -21,8 +22,18 @@ class AiQwenApplicationTests {
     @Test
     public void testQwen(@Autowired DashScopeChatModel dashScopeChatModel) {
 
-        String content = dashScopeChatModel.call("你好你是谁");
+        String content = dashScopeChatModel.call("你好请帮我写一段夸奖产品经理的话，50字以内");
         System.out.println(content);
+    }
+
+    /**
+     * 阿里通义千问 聊天
+     */
+    @Test
+    public void testQwenStream(@Autowired DashScopeChatModel dashScopeChatModel) {
+
+        Flux<String> stream = dashScopeChatModel.stream("你好请帮我写一段夸奖产品经理的话，50字以内");
+        stream.toIterable().forEach(System.out::println);
     }
 
     /**
@@ -30,15 +41,16 @@ class AiQwenApplicationTests {
      * <p>
      * 调用通义万象 wanx2.1-t2i-turbo
      * <p>
-     * 先获取任务ID
-     * 在获取任务详情
-     * 根据任务状态，获取生成的图片URL;
+     * 1、先获取任务ID
+     * 2、获取任务详情
+     * 3、根据任务状态，获取生成的图片URL;
      */
     @Test
     public void text2Img(@Autowired DashScopeImageModel imageModel) {
 
-        ImagePrompt imagePrompt = new ImagePrompt("程序员李彬",
+        ImagePrompt imagePrompt = new ImagePrompt("程序员LiBin",
                 DashScopeImageOptions.builder()
+                        /*设置模型类型*/
                         .withModel(DashScopeImageApi.ImageModel.WANX2_1_T2I_TURBO.value).build()
         );
 
@@ -73,7 +85,7 @@ class AiQwenApplicationTests {
                 break;
             }
             try {
-                Thread.sleep(1000);
+                Thread.sleep(5000);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }

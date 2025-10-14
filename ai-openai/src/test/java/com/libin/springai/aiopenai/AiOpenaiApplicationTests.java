@@ -8,6 +8,7 @@ class AiOpenaiApplicationTests {
 
     @Test
     void contextLoads() {
+
     }
 
 }

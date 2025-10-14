@@ -3,6 +3,7 @@ package com.libin.springai.aideepseek;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.deepseek.DeepSeekAssistantMessage;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
@@ -21,7 +22,7 @@ class AiDeepseekApplicationTests {
      */
     @Test
     void chatTest(@Autowired DeepSeekChatModel chatModel) {
-        String call = chatModel.call("你好，请为LiBin写一首诗");
+        String call = chatModel.call("你好，我是LiBin！很高兴认识你");
         System.out.println(call);
 
     }
@@ -34,7 +35,7 @@ class AiDeepseekApplicationTests {
     @Test
     void chatTest2(@Autowired DeepSeekChatModel chatModel) {
 
-        Flux<String> stream = chatModel.stream("你好，请为LiBin写一首诗");
+        Flux<String> stream = chatModel.stream("你好，我是LiBin！很高兴认识你");
         stream.toIterable().forEach(System.out::println);
     }
 
@@ -60,7 +61,7 @@ class AiDeepseekApplicationTests {
                 .temperature(1.5d)
                 /*模型类型 */
                 .model("deepseek-reasoner")
-                .maxTokens(50)
+                .maxTokens(500)
                 .build();
         ChatResponse res = chatModel.call(new Prompt("你好请写一首描写新中国的五言绝句", options));
         DeepSeekAssistantMessage output = (DeepSeekAssistantMessage) res.getResult().getOutput();
@@ -87,6 +88,7 @@ class AiDeepseekApplicationTests {
                 .build();
 
         Prompt prompt = new Prompt("你好请写一首描写新中国的五言绝句", options);
+//        new PromptTemplate()
 
         Flux<ChatResponse> flux = chatModel.stream(prompt);
 
