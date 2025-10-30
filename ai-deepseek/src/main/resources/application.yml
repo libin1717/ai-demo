@@ -1,5 +1,5 @@
 # 应用服务 WEB 访问端口
-server.port: 8081
+server.port: 8091
 
 spring:
   application.name: ai-deepseek
@@ -11,3 +11,4 @@ spring:
       chat:
         options:
           model: deepseek-chat
+      baseUrl: https://api.deepseek.com
