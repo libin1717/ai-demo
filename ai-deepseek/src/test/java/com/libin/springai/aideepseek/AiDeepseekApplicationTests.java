@@ -22,8 +22,10 @@ class AiDeepseekApplicationTests {
      */
     @Test
     void chatTest(@Autowired DeepSeekChatModel chatModel) {
-        String call = chatModel.call("你好，我是LiBin！很高兴认识你");
+        String call = chatModel.call("请帮我简化下列语句: 你是一位历史学者");
         System.out.println(call);
+        ChatResponse chatResponse = chatModel.call(new Prompt("请帮我简化下列语句,并告知我唯一答案: 你是一位历史学者"));
+        System.out.printf(chatResponse.getResult().toString());
 
     }
 
@@ -63,7 +65,7 @@ class AiDeepseekApplicationTests {
                 .model("deepseek-reasoner")
                 .maxTokens(500)
                 .build();
-        ChatResponse res = chatModel.call(new Prompt("你好请写一首描写新中国的五言绝句", options));
+        ChatResponse res = chatModel.call(new Prompt("请帮我简化下列语句,并告知我最优答案: 你是一位历史学者", options));
         DeepSeekAssistantMessage output = (DeepSeekAssistantMessage) res.getResult().getOutput();
         /*思维链内容*/
         String content = output.getReasoningContent();

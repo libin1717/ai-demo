@@ -11,4 +11,9 @@ spring:
       chat:
         options:
           model: deepseek-chat
+          # 温度
+          temperature: 0.0
+          # 最大token数
+#          max-tokens: 8192
+
       baseUrl: https://api.deepseek.com

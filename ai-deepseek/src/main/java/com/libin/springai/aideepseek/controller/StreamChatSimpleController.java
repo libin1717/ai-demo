@@ -1,6 +1,5 @@
 package com.libin.springai.aideepseek.controller;
 
-import com.libin.springai.aideepseek.service.ChatService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -29,12 +28,9 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @RestController
-@RequestMapping("/sse/chat")
-@CrossOrigin(origins = "*") //
-public class StreamChatController {
-
-    @Autowired
-    private ChatService chatService;
+@RequestMapping("/sse/chat/simple")
+@CrossOrigin(origins = "*")
+public class StreamChatSimpleController {
 
     @Autowired
     private DeepSeekChatModel deepSeekChatModel;
