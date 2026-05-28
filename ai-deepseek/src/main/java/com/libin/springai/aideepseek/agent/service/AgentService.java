@@ -97,9 +97,7 @@ public class AgentService {
 
         String reply;
         try {
-            ChatClient chatClient = chatClientBuilder
-                    .defaultTools(agentTools)
-                    .build();
+            ChatClient chatClient = chatClientBuilder.build();
 
             ChatResponse chatResponse = chatClient.prompt()
                     .system(systemPrompt)

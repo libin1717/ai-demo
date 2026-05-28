@@ -3,7 +3,6 @@ package com.libin.springai.aideepseek.agent.tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -14,7 +13,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
-@Component
 public class AgentTools {
 
     private static final Path SANDBOX = Paths.get(".sandbox").toAbsolutePath().normalize();
