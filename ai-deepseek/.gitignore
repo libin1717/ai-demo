@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Hermes Agent demo runtime files
+.memory/
+.sandbox/
