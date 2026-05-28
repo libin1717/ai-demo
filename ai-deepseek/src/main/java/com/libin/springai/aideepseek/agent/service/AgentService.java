@@ -95,21 +95,26 @@ public class AgentService {
         // 3. Reset tool counter, call LLM with tool calling via ChatClient
         agentTools.getAndResetToolCallCount();
 
-        ChatClient chatClient = chatClientBuilder
-                .defaultTools(agentTools)
-                .build();
+        String reply;
+        try {
+            ChatClient chatClient = chatClientBuilder
+                    .defaultTools(agentTools)
+                    .build();
 
-        ChatResponse chatResponse = chatClient.prompt()
-                .system(systemPrompt)
-                .user(userMessage)
-                .options(DeepSeekChatOptions.builder()
-                        .model("deepseek-chat")
-                        .temperature(0.0)
-                        .build())
-                .call()
-                .chatResponse();
+            ChatResponse chatResponse = chatClient.prompt()
+                    .system(systemPrompt)
+                    .user(userMessage)
+                    .options(DeepSeekChatOptions.builder()
+                            .model("deepseek-chat")
+                            .temperature(0.0)
+                            .build())
+                    .call()
+                    .chatResponse();
 
-        String reply = chatResponse.getResult().getOutput().getText();
+            reply = chatResponse.getResult().getOutput().getText();
+        } catch (Exception e) {
+            reply = "抱歉，AI 服务暂时不可用，请稍后重试。错误: " + e.getMessage();
+        }
         response.setReply(reply);
 
         int toolCallCount = agentTools.getAndResetToolCallCount();
@@ -117,7 +122,12 @@ public class AgentService {
 
         // 4. Secondary LLM call: extract memories from conversation
         String conversation = "用户: " + userMessage + "\n\nAI: " + reply;
-        String extractResult = deepSeekChatModel.call(EXTRACT_PROMPT + conversation);
+        String extractResult;
+        try {
+            extractResult = deepSeekChatModel.call(EXTRACT_PROMPT + conversation);
+        } catch (Exception e) {
+            extractResult = "{\"facts\":[],\"preferences\":[],\"decisions\":[]}";
+        }
 
         MemoryExtraction extraction = parseExtraction(extractResult);
         int beforeCount = countMemoryEntries();
@@ -145,17 +155,21 @@ public class AgentService {
 
         // 5. Skill sedimentation: generate skill when tool calls >= threshold
         if (toolCallCount >= SKILL_THRESHOLD) {
-            String skillResult = deepSeekChatModel.call(SKILL_GENERATE_PROMPT + conversation);
             try {
-                SkillGeneration gen = parseSkillGeneration(skillResult);
-                if (gen != null && gen.getName() != null) {
-                    skillManager.createSkill(gen.getName(), gen.getDescription(),
-                            gen.getTriggers(), gen.getContent());
-                    response.setSkillTriggered(true);
-                    response.setNewSkillName(gen.getName());
+                String skillResult = deepSeekChatModel.call(SKILL_GENERATE_PROMPT + conversation);
+                try {
+                    SkillGeneration gen = parseSkillGeneration(skillResult);
+                    if (gen != null && gen.getName() != null) {
+                        skillManager.createSkill(gen.getName(), gen.getDescription(),
+                                gen.getTriggers(), gen.getContent());
+                        response.setSkillTriggered(true);
+                        response.setNewSkillName(gen.getName());
+                    }
+                } catch (Exception e) {
+                    // Skill generation failure doesn't block main flow
                 }
             } catch (Exception e) {
-                // Skill generation failure doesn't block main flow
+                // Skill generation LLM call failure doesn't block main flow
             }
         }
 

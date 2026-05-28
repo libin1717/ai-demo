@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -20,7 +19,7 @@ public class AgentTools {
 
     private static final Path SANDBOX = Paths.get(".sandbox").toAbsolutePath().normalize();
 
-    private final AtomicInteger toolCallCounter = new AtomicInteger(0);
+    private final ThreadLocal<Integer> toolCallCounter = ThreadLocal.withInitial(() -> 0);
 
     public AgentTools() {
         try {
@@ -31,12 +30,14 @@ public class AgentTools {
     }
 
     public int getAndResetToolCallCount() {
-        return toolCallCounter.getAndSet(0);
+        int count = toolCallCounter.get();
+        toolCallCounter.set(0);
+        return count;
     }
 
     @Tool(description = "读取沙箱中指定文件的完整内容")
     public String readFile(@ToolParam(description = "相对于沙箱根目录的文件路径") String path) {
-        toolCallCounter.incrementAndGet();
+        toolCallCounter.set(toolCallCounter.get() + 1);
         Path target = resolveSafe(path);
         if (target == null) return "Error: 路径不在沙箱范围内";
         if (!Files.exists(target)) return "Error: 文件不存在 - " + path;
@@ -51,7 +52,7 @@ public class AgentTools {
     public String writeFile(
             @ToolParam(description = "相对于沙箱根目录的文件路径") String path,
             @ToolParam(description = "要写入的完整文件内容") String content) {
-        toolCallCounter.incrementAndGet();
+        toolCallCounter.set(toolCallCounter.get() + 1);
         Path target = resolveSafe(path);
         if (target == null) return "Error: 路径不在沙箱范围内";
         try {
@@ -65,7 +66,7 @@ public class AgentTools {
 
     @Tool(description = "在沙箱中搜索包含指定关键字的文件，返回匹配的文件路径和行内容")
     public String searchCode(@ToolParam(description = "搜索关键字") String keyword) {
-        toolCallCounter.incrementAndGet();
+        toolCallCounter.set(toolCallCounter.get() + 1);
         try (Stream<Path> files = Files.walk(SANDBOX)) {
             List<String> results = files
                     .filter(Files::isRegularFile)
@@ -92,7 +93,7 @@ public class AgentTools {
     @Tool(description = "列出沙箱中指定目录的文件和子目录结构")
     public String listDirectory(
             @ToolParam(description = "相对于沙箱根目录的路径，留空表示根目录") String path) {
-        toolCallCounter.incrementAndGet();
+        toolCallCounter.set(toolCallCounter.get() + 1);
         Path dir = SANDBOX;
         if (path != null && !path.isBlank()) {
             Path resolved = resolveSafe(path);
