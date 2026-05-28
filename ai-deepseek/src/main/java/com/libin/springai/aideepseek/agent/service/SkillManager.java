@@ -21,18 +21,45 @@ public class SkillManager {
 
     static final Path SKILLS_PATH = Paths.get(".memory/skills");
 
+    private volatile boolean initialized = true;
+
     public SkillManager() {
         try {
             Files.createDirectories(SKILLS_PATH);
         } catch (IOException e) {
             log.error("Failed to create skills directory", e);
+            initialized = false;
         }
+    }
+
+    /**
+     * Resolve and validate a skill file path, protecting against path traversal.
+     * Returns null if the name is invalid or attempts to escape SKILLS_PATH.
+     */
+    private Path resolveSkillPath(String skillName) {
+        if (skillName == null || skillName.isBlank()) {
+            return null;
+        }
+        Path resolved = SKILLS_PATH.resolve(skillName + ".md").normalize();
+        if (!resolved.startsWith(SKILLS_PATH.normalize())) {
+            log.warn("Path traversal attempt blocked: {}", skillName);
+            return null;
+        }
+        return resolved;
     }
 
     /**
      * Create a skill document with YAML front matter
      */
     public synchronized void createSkill(String name, String description, List<String> triggers, String content) {
+        if (!initialized) return;
+        if (name == null || name.isBlank()) {
+            log.error("Skill name must not be null or blank");
+            return;
+        }
+        Path skillFile = resolveSkillPath(name);
+        if (skillFile == null) return;
+
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
         String triggersStr = triggers.stream().map(t -> "\"" + t + "\"").collect(Collectors.joining(", ", "[", "]"));
 
@@ -46,7 +73,6 @@ public class SkillManager {
                 "---\n\n" +
                 content;
 
-        Path skillFile = SKILLS_PATH.resolve(name + ".md");
         try {
             Files.writeString(skillFile, skillMd);
             log.info("Skill created: {}", name);
@@ -59,6 +85,7 @@ public class SkillManager {
      * Match skills by keyword matching against triggers field
      */
     public synchronized Map<String, String> match(String query) {
+        if (!initialized) return Collections.emptyMap();
         Map<String, String> matched = new LinkedHashMap<>();
         if (query == null || query.isBlank()) {
             return matched;
@@ -95,8 +122,10 @@ public class SkillManager {
     private static final Pattern SCORE_PATTERN = Pattern.compile("score: (\\d+)");
 
     public synchronized void incrementScore(String skillName) {
-        Path skillFile = SKILLS_PATH.resolve(skillName + ".md");
-        if (!Files.exists(skillFile)) return;
+        if (!initialized) return;
+        if (skillName == null || skillName.isBlank()) return;
+        Path skillFile = resolveSkillPath(skillName);
+        if (skillFile == null || !Files.exists(skillFile)) return;
         try {
             String content = Files.readString(skillFile);
             Matcher matcher = SCORE_PATTERN.matcher(content);
@@ -111,6 +140,7 @@ public class SkillManager {
     }
 
     public synchronized List<SkillInfo> listAll() {
+        if (!initialized) return Collections.emptyList();
         List<SkillInfo> skills = new ArrayList<>();
         try {
             if (!Files.exists(SKILLS_PATH)) return skills;
@@ -130,10 +160,10 @@ public class SkillManager {
         return skills;
     }
 
-    public String getByName(String skillName) {
-        Path skillFile = SKILLS_PATH.resolve(skillName + ".md").normalize();
-        if (!skillFile.startsWith(SKILLS_PATH.normalize())) return null;
-        if (!Files.exists(skillFile)) return null;
+    public synchronized String getByName(String skillName) {
+        if (!initialized) return null;
+        Path skillFile = resolveSkillPath(skillName);
+        if (skillFile == null || !Files.exists(skillFile)) return null;
         try {
             return Files.readString(skillFile);
         } catch (IOException e) {
