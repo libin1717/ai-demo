@@ -56,7 +56,7 @@ class MemoryStoreTest {
     @Test
     void shouldSortExactMatchBeforePartial() {
         memoryStore.saveFact("用户喜欢使用 Java");
-        memoryStore.saveFact("项目中大量使用了 Java Stream API");
+        memoryStore.saveFact("项目使用了JavaScript框架进行开发");
 
         Map<String, List<String>> results = memoryStore.search("Java");
         List<String> matches = results.get("facts.md");
