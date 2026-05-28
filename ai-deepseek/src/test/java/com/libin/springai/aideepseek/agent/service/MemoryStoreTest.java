@@ -19,9 +19,10 @@ class MemoryStoreTest {
     void setUp() throws IOException {
         Path memPath = Path.of(".memory");
         if (Files.exists(memPath)) {
-            Files.walk(memPath)
-                .sorted(java.util.Comparator.reverseOrder())
-                .forEach(p -> { try { Files.deleteIfExists(p); } catch (IOException ignored) {} });
+            try (var stream = Files.walk(memPath)) {
+                stream.sorted(java.util.Comparator.reverseOrder())
+                    .forEach(p -> { try { Files.deleteIfExists(p); } catch (IOException ignored) {} });
+            }
         }
         memoryStore = new MemoryStore();
     }

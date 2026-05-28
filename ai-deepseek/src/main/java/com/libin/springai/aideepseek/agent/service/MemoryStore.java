@@ -74,7 +74,7 @@ public class MemoryStore {
      * Search memories by keyword. Returns filename → matching lines.
      * Exact word matches sorted before partial matches.
      */
-    public Map<String, List<String>> search(String query) {
+    public synchronized Map<String, List<String>> search(String query) {
         Map<String, List<String>> results = new LinkedHashMap<>();
         if (query == null || query.isBlank()) {
             return results;
@@ -111,7 +111,7 @@ public class MemoryStore {
         return results;
     }
 
-    public Map<String, Integer> getMemorySummary() {
+    public synchronized Map<String, Integer> getMemorySummary() {
         Map<String, Integer> summary = new LinkedHashMap<>();
         for (String file : MEMORY_FILES) {
             try {
