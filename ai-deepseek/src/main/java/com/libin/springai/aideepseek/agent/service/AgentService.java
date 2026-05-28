@@ -61,6 +61,7 @@ public class AgentService {
     private static final String SKILL_GENERATE_PROMPT =
             "基于以下对话，总结出一份可复用的技能文档。\n\n" +
             "技能文档格式要求：\n" +
+
             "1. 技能名称（kebab-case，如 spring-controller-pattern）\n" +
             "2. 一句话描述\n" +
             "3. 触发关键词（逗号分隔的列表，用于后续检索匹配）\n" +
@@ -102,6 +103,7 @@ public class AgentService {
             ChatResponse chatResponse = chatClient.prompt()
                     .system(systemPrompt)
                     .user(userMessage)
+                    .tools(agentTools)
                     .options(DeepSeekChatOptions.builder()
                             .model("deepseek-chat")
                             .temperature(0.0)
