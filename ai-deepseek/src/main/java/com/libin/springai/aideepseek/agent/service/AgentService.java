@@ -15,6 +15,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * Agent 核心服务，封装完整的 Agent 执行循环。
+ * <p>
+ * 每次执行循环包含以下阶段：
+ * <ol>
+ *   <li>搜索相关记忆和技能</li>
+ *   <li>构建包含上下文信息的系统提示词</li>
+ *   <li>通过 ChatClient 调用 LLM（支持工具调用）</li>
+ *   <li>从对话中提取关键信息并存入记忆</li>
+ *   <li>当工具调用次数达到阈值时，沉淀生成为可复用技能</li>
+ * </ol>
+ * 灵感来源于 Nous Research Hermes Agent 的设计理念。
+ */
 @Service
 public class AgentService {
 
@@ -33,8 +46,10 @@ public class AgentService {
     @Autowired
     private AgentTools agentTools;
 
+    /** 触发技能生成的工具调用次数阈值 */
     private static final int SKILL_THRESHOLD = 5;
 
+    /** Agent 基础角色定义，描述核心能力与行为约束 */
     private static final String AGENT_ROLE =
             "你是一个具有持久记忆和自我进化能力的 AI Agent（灵感来自 Nous Research Hermes Agent）。\n\n" +
             "核心能力：\n" +
@@ -48,6 +63,7 @@ public class AgentService {
             "- 生成的代码要完整、可运行\n" +
             "- 用中文回复用户";
 
+    /** 记忆提取提示词模板，要求 LLM 输出纯 JSON */
     private static final String EXTRACT_PROMPT =
             "从以下对话中提取关键信息，输出纯 JSON（不要包含任何其他文字）：\n\n" +
             "{\n" +
@@ -58,10 +74,10 @@ public class AgentService {
             "如果没有某类信息，对应数组留空。只输出JSON，不要输出其他内容。\n\n" +
             "对话内容：\n";
 
+    /** 技能文档生成提示词模板，要求 LLM 输出包含技能元数据的纯 JSON */
     private static final String SKILL_GENERATE_PROMPT =
             "基于以下对话，总结出一份可复用的技能文档。\n\n" +
             "技能文档格式要求：\n" +
-
             "1. 技能名称（kebab-case，如 spring-controller-pattern）\n" +
             "2. 一句话描述\n" +
             "3. 触发关键词（逗号分隔的列表，用于后续检索匹配）\n" +
@@ -75,6 +91,15 @@ public class AgentService {
             "}\n\n" +
             "对话内容：\n";
 
+    /**
+     * 执行一次完整的 Agent 对话循环。
+     * <p>
+     * 流程：记忆/技能搜索 → 构建提示词 → LLM 调用（含工具）→ 记忆提取 → 技能沉淀（条件触发）。
+     * 记忆提取和技能生成的失败不会影响主流程的回复返回。
+     *
+     * @param userMessage 用户输入的文本消息
+     * @return 包含回复、工具调用统计、记忆使用和技能生成状态的汇总结果
+     */
     public AgentResponse executeCycle(String userMessage) {
         AgentResponse response = new AgentResponse();
         response.setSkillTriggered(false);
@@ -120,7 +145,7 @@ public class AgentService {
         int toolCallCount = agentTools.getAndResetToolCallCount();
         response.setToolCallCount(toolCallCount);
 
-        // 4. Secondary LLM call: extract memories from conversation
+        // 4. 二次调用大型语言模型：从对话中提取记忆
         String conversation = "用户: " + userMessage + "\n\nAI: " + reply;
         String extractResult;
         try {
@@ -153,7 +178,7 @@ public class AgentService {
         int afterCount = countMemoryEntries();
         response.setNewMemoryCount(afterCount - beforeCount);
 
-        // 5. Skill sedimentation: generate skill when tool calls >= threshold
+        // 5. 技能沉淀：当工具调用次数达到阈值时生成技能
         if (toolCallCount >= SKILL_THRESHOLD) {
             try {
                 String skillResult = deepSeekChatModel.call(SKILL_GENERATE_PROMPT + conversation);
@@ -176,6 +201,16 @@ public class AgentService {
         return response;
     }
 
+    /**
+     * 构建发送给 LLM 的完整系统提示词。
+     * <p>
+     * 拼接基础角色定义、匹配的历史记忆和匹配的技能文档，
+     * 在末尾追加指示让 LLM 优先使用记忆和技能中的信息。
+     *
+     * @param memories 匹配的历史记忆（文件名 → 内容行列表）
+     * @param skills   匹配的技能文档（技能名 → 正文内容）
+     * @return 完整的系统提示词字符串
+     */
     private String buildSystemPrompt(Map<String, List<String>> memories, Map<String, String> skills) {
         StringBuilder sb = new StringBuilder();
         sb.append(AGENT_ROLE);
@@ -202,6 +237,14 @@ public class AgentService {
         return sb.toString();
     }
 
+    /**
+     * 解析 LLM 返回的记忆提取 JSON 字符串。
+     * <p>
+     * 自动处理被 markdown 代码块包裹的 JSON，解析失败时返回空的 MemoryExtraction。
+     *
+     * @param raw LLM 返回的原始文本
+     * @return 解析后的 MemoryExtraction 对象，解析失败时所有字段为空列表
+     */
     MemoryExtraction parseExtraction(String raw) {
         if (raw == null || raw.isBlank()) {
             return new MemoryExtraction(List.of(), List.of(), List.of());
@@ -220,6 +263,14 @@ public class AgentService {
         }
     }
 
+    /**
+     * 解析 LLM 返回的技能生成 JSON 字符串。
+     * <p>
+     * 自动处理被 markdown 代码块包裹的 JSON，解析失败时返回 null。
+     *
+     * @param raw LLM 返回的原始文本
+     * @return 解析后的 SkillGeneration 对象，解析失败时返回 null
+     */
     private SkillGeneration parseSkillGeneration(String raw) {
         try {
             String json = raw.trim();
@@ -235,19 +286,35 @@ public class AgentService {
         }
     }
 
+    /**
+     * 统计当前所有记忆文件中的总条目数。
+     *
+     * @return 所有记忆文件的总条目数
+     */
     private int countMemoryEntries() {
         return memoryStore.getMemorySummary().values().stream().mapToInt(Integer::intValue).sum();
     }
 
+    /**
+     * 技能生成结果的内部类，用作 LLM 技能生成提示的 JSON 反序列化目标。
+     */
     private static class SkillGeneration {
+        /** 技能名称（kebab-case 格式） */
         public String name;
+        /** 技能的一句话描述 */
         public String description;
+        /** 触发关键词列表 */
         public List<String> triggers;
+        /** 技能正文内容（Markdown 格式） */
         public String content;
 
+        /** 获取技能名称 */
         public String getName() { return name; }
+        /** 获取技能描述 */
         public String getDescription() { return description; }
+        /** 获取触发关键词列表 */
         public List<String> getTriggers() { return triggers; }
+        /** 获取技能正文内容 */
         public String getContent() { return content; }
     }
 }

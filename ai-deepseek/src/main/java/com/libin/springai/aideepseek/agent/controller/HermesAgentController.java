@@ -11,6 +11,11 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
+/**
+ * Hermes Agent REST API 控制器，提供对话、记忆查看和技能管理接口。
+ * <p>
+ * 所有接口统一使用 {@link ResultDto} 包装响应结果。
+ */
 @RestController
 @RequestMapping("/agent")
 public class HermesAgentController {
@@ -24,17 +29,36 @@ public class HermesAgentController {
     @Autowired
     private SkillManager skillManager;
 
+    /**
+     * 向 Agent 发送一条消息并获取完整响应。
+     * <p>
+     * 响应中包含 AI 回复、工具调用次数、使用的记忆统计以及技能沉淀状态。
+     *
+     * @param message 用户输入的消息文本
+     * @return 包含 Agent 完整执行结果的响应
+     */
     @PostMapping("/chat")
     public ResultDto<AgentResponse> chat(@RequestParam String message) {
         AgentResponse response = agentService.executeCycle(message);
         return ResultDto.success(response);
     }
 
+    /**
+     * 获取当前所有记忆文件的条目统计。
+     *
+     * @return 文件名到条目数量的映射
+     */
     @GetMapping("/memory")
     public ResultDto<Map<String, Integer>> memorySummary() {
         return ResultDto.success(memoryStore.getMemorySummary());
     }
 
+    /**
+     * 获取指定记忆文件的完整内容。
+     *
+     * @param fileName 文件名，如 facts.md、profile.md、decisions.md
+     * @return 文件内容字符串，文件不存在时返回失败结果
+     */
     @GetMapping("/memory/{fileName}")
     public ResultDto<String> memoryFile(@PathVariable String fileName) {
         String content = memoryStore.getMemoryFile(fileName);
@@ -44,11 +68,22 @@ public class HermesAgentController {
         return ResultDto.success(content);
     }
 
+    /**
+     * 获取所有已存储的技能列表。
+     *
+     * @return 技能信息列表
+     */
     @GetMapping("/skills")
     public ResultDto<List<SkillInfo>> skills() {
         return ResultDto.success(skillManager.listAll());
     }
 
+    /**
+     * 获取指定技能的完整文档内容。
+     *
+     * @param skillName 技能名称
+     * @return 技能文档的完整 Markdown 内容，不存在时返回失败结果
+     */
     @GetMapping("/skills/{skillName}")
     public ResultDto<String> skillDetail(@PathVariable String skillName) {
         String content = skillManager.getByName(skillName);
@@ -60,6 +95,14 @@ public class HermesAgentController {
 
     // ========== Demo endpoint ==========
 
+    /**
+     * 运行预定义的 4 轮演示对话，展示 Agent 的记忆累积和技能沉淀能力。
+     * <p>
+     * 演示流程依次创建用户注册 Controller、添加参数校验、创建订单 Controller、创建商品 Controller，
+     * 每轮对话后会记录记忆状态和技能列表的变化。
+     *
+     * @return 包含各轮对话详情、记忆前后状态的汇总结果
+     */
     @PostMapping("/demo/run")
     public ResultDto<Map<String, Object>> runDemo() {
         String[] messages = {
@@ -93,6 +136,11 @@ public class HermesAgentController {
         return ResultDto.success(result);
     }
 
+    /**
+     * 捕获当前所有记忆文件的完整内容快照。
+     *
+     * @return 包含 facts.md、profile.md、decisions.md 全部内容的字符串
+     */
     private String captureMemoryState() {
         StringBuilder sb = new StringBuilder();
         for (String file : List.of("facts.md", "profile.md", "decisions.md")) {
