@@ -1,5 +1,6 @@
 package com.libin.springai.aideepseek.agent.service;
 
+import com.alibaba.fastjson.JSON;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -9,8 +10,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 持久记忆存储服务，基于本地文件系统管理 Agent 的记忆。
@@ -28,10 +31,14 @@ import java.util.stream.Collectors;
 @Service
 public class MemoryStore {
 
-    /** 记忆存储根目录路径 */
+    /**
+     * 记忆存储根目录路径
+     */
     static final Path MEMORY_PATH = Paths.get(".memory");
 
-    /** 记忆数据文件列表 */
+    /**
+     * 记忆数据文件列表
+     */
     private static final List<String> MEMORY_FILES = List.of("facts.md", "profile.md", "decisions.md");
 
     /**
@@ -68,6 +75,7 @@ public class MemoryStore {
     public synchronized void saveFact(String fact) {
         appendToFile(MEMORY_PATH.resolve("facts.md"), "- " + fact + "\n");
         appendToIndex("fact", fact);
+        log.info("successfully save fact: {}", fact);
     }
 
     /**
@@ -78,6 +86,7 @@ public class MemoryStore {
     public synchronized void savePreference(String preference) {
         appendToFile(MEMORY_PATH.resolve("profile.md"), "- " + preference + "\n");
         appendToIndex("preference", preference);
+        log.info("successfully save preference:{}", preference);
     }
 
     /**
@@ -88,6 +97,7 @@ public class MemoryStore {
     public synchronized void saveDecision(String decision) {
         appendToFile(MEMORY_PATH.resolve("decisions.md"), "- " + decision + "\n");
         appendToIndex("decision", decision);
+        log.info("successfully save decision:{}", decision);
     }
 
     /**
@@ -99,6 +109,7 @@ public class MemoryStore {
     private void appendToFile(Path filePath, String line) {
         try {
             Files.writeString(filePath, line, StandardOpenOption.APPEND);
+            log.info("success append to :{}, content:{}", filePath, line);
         } catch (IOException e) {
             log.error("Failed to append to {}", filePath, e);
         }
@@ -113,8 +124,10 @@ public class MemoryStore {
     private void appendToIndex(String type, String content) {
         String timestamp = LocalDateTime.now().toString().substring(0, 19);
         String truncated = content.length() > 80 ? content.substring(0, 80) + "..." : content;
-        appendToFile(MEMORY_PATH.resolve("MEMORY.md"),
-                "- [" + timestamp + "] " + type + ": " + truncated + "\n");
+
+        String line = "- [" + timestamp + "] " + type + ": " + truncated + "\n";
+        appendToFile(MEMORY_PATH.resolve("MEMORY.md"), line);
+        log.info("success append to :{}, content:{}", MEMORY_PATH, line);
     }
 
     /**
@@ -159,6 +172,7 @@ public class MemoryStore {
                 log.error("Failed to search in {}", file, e);
             }
         }
+        log.info("success search in:{}, query:{}, result:{}", MEMORY_PATH, query, JSON.toJSONString(results));
         return results;
     }
 
