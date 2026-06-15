@@ -66,6 +66,59 @@ class MemoryStoreTest {
     }
 
     @Test
+    void shouldRankByMultipleKeywordHits() {
+        memoryStore.saveFact("项目使用 Spring Boot 3.5.5 框架");
+        memoryStore.saveFact("使用 @Valid 和 @Size 注解做参数校验");
+        memoryStore.saveFact("端口号是 8091");
+
+        // "Spring" hits line 1, "注解" hits line 2, "Docker" hits nothing
+        Map<String, List<String>> results = memoryStore.searchByKeywords(
+                List.of("Spring", "注解", "Docker"));
+        assertEquals(1, results.size());
+        List<String> matches = results.get("facts.md");
+        assertEquals(2, matches.size());
+    }
+
+    @Test
+    void shouldRankLineWithMoreKeywordHitsFirst() {
+        // Line 1: contains "Spring" and "参数校验" → 2 hits
+        // Line 2: contains "注解" → 1 hit
+        // Line 1 should rank FIRST (2 hits > 1 hit)
+        memoryStore.saveFact("使用 Spring Boot 框架做参数校验");
+        memoryStore.saveFact("@NotBlank 注解用于验证非空字符串");
+
+        Map<String, List<String>> results = memoryStore.searchByKeywords(
+                List.of("Spring", "注解", "参数校验"));
+
+        assertEquals(1, results.size());
+        List<String> matches = results.get("facts.md");
+        assertEquals(2, matches.size());
+        assertEquals("- 使用 Spring Boot 框架做参数校验", matches.get(0));
+    }
+
+    @Test
+    void shouldReturnEmptyForNoKeywordMatches() {
+        memoryStore.saveFact("项目使用 Spring Boot");
+        Map<String, List<String>> results = memoryStore.searchByKeywords(
+                List.of("Docker", "Kubernetes"));
+        assertTrue(results.isEmpty());
+    }
+
+    @Test
+    void shouldHandleEmptyKeywordList() {
+        memoryStore.saveFact("项目使用 Spring Boot");
+        Map<String, List<String>> results = memoryStore.searchByKeywords(List.of());
+        assertTrue(results.isEmpty());
+    }
+
+    @Test
+    void shouldHandleNullKeywordList() {
+        memoryStore.saveFact("项目使用 Spring Boot");
+        Map<String, List<String>> results = memoryStore.searchByKeywords(null);
+        assertTrue(results.isEmpty());
+    }
+
+    @Test
     void shouldReportMemorySummary() {
         memoryStore.saveFact("事实1");
         memoryStore.savePreference("偏好1");

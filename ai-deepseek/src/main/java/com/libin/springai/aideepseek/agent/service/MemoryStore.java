@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 持久记忆存储服务，基于本地文件系统管理 Agent 的记忆。
@@ -173,6 +174,51 @@ public class MemoryStore {
             }
         }
         log.info("success search in:{}, query:{}, result:{}", MEMORY_PATH, query, JSON.toJSONString(results));
+        return results;
+    }
+
+    /**
+     * 按多个关键词搜索记忆，合并去重并按命中次数降序排列。
+     * <p>
+     * 对每个关键词调用 {@link #search(String)}，然后将结果合并：
+     * 同一条记忆线命中更多关键词的排在前面。
+     *
+     * @param keywords 搜索关键词列表（通常由 LLM 从用户消息中提取）
+     * @return 文件名到匹配行列表的映射，按多关键词命中次数排序；无结果时返回空 Map
+     */
+    public synchronized Map<String, List<String>> searchByKeywords(List<String> keywords) {
+        Map<String, List<String>> results = new LinkedHashMap<>();
+        if (keywords == null || keywords.isEmpty()) {
+            return results;
+        }
+
+        // 记录每条记忆线被多少关键词命中：fileName -> (line -> hitCount)
+        Map<String, Map<String, Integer>> hitCounts = new LinkedHashMap<>();
+
+        for (String keyword : keywords) {
+            if (keyword == null || keyword.isBlank()) continue;
+            Map<String, List<String>> keywordResults = search(keyword);
+            for (Map.Entry<String, List<String>> entry : keywordResults.entrySet()) {
+                String file = entry.getKey();
+                hitCounts.putIfAbsent(file, new LinkedHashMap<>());
+                Map<String, Integer> fileHits = hitCounts.get(file);
+                for (String line : entry.getValue()) {
+                    fileHits.merge(line, 1, Integer::sum);
+                }
+            }
+        }
+
+        // 按命中次数降序排列，同命中次数保持原有精确/部分匹配顺序
+        for (Map.Entry<String, Map<String, Integer>> fileEntry : hitCounts.entrySet()) {
+            String file = fileEntry.getKey();
+            List<String> sorted = fileEntry.getValue().entrySet().stream()
+                    .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toList());
+            results.put(file, sorted);
+        }
+
+        log.info("Keyword search: keywords={}, hitFiles={}", keywords, results.keySet());
         return results;
     }
 

@@ -48,4 +48,24 @@ class AgentServiceTest {
         assertTrue(result.getPreferences().isEmpty());
         assertTrue(result.getDecisions().isEmpty());
     }
+
+    @Test
+    void shouldExtractKeywordsFromShortMessageDirectly() {
+        // Messages under 10 chars skip LLM and return the original message
+        List<String> keywords = agentService.extractKeywords("hello");
+        assertEquals(1, keywords.size());
+        assertEquals("hello", keywords.get(0));
+    }
+
+    @Test
+    void shouldHandleNullMessageInExtractKeywords() {
+        List<String> keywords = agentService.extractKeywords(null);
+        assertTrue(keywords.isEmpty());
+    }
+
+    @Test
+    void shouldHandleBlankMessageInExtractKeywords() {
+        List<String> keywords = agentService.extractKeywords("   ");
+        assertTrue(keywords.isEmpty());
+    }
 }

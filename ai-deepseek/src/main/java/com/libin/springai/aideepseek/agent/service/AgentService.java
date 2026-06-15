@@ -7,11 +7,13 @@ import com.libin.springai.aideepseek.agent.tool.AgentTools;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -102,6 +104,14 @@ public class AgentService {
                     "对话内容：\n";
 
     /**
+     * 关键词提取提示词，要求 LLM 从用户消息中提取搜索关键词
+     */
+    private static final String KEYWORD_EXTRACT_PROMPT =
+            "从以下用户消息中提取3-5个用于搜索技术文档的关键词（名词、术语、框架名、注解名、技术概念），"
+                    + "用逗号分隔，只输出关键词，不要输出任何其他内容。\n\n"
+                    + "用户消息：";
+
+    /**
      * 执行一次完整的 Agent 对话循环。
      * <p>
      * 流程：记忆/技能搜索 → 构建提示词 → LLM 调用（含工具）→ 记忆提取 → 技能沉淀（条件触发）。
@@ -111,16 +121,53 @@ public class AgentService {
      * @return 包含回复、工具调用统计、记忆使用和技能生成状态的汇总结果
      */
     public AgentResponse executeCycle(String userMessage) {
-        log.info("开始执行agent对话，userMessage:{}", userMessage);
+        return executeCycleWithEvents(userMessage, null);
+    }
+
+    /**
+     * 执行一次完整的 Agent 对话循环，并通过回调函数在各阶段推送 SSE 事件。
+     * <p>
+     * 与 {@link #executeCycle(String)} 流程相同，但在每个阶段通过 eventCallback
+     * 发送进度事件（thinking → memory → reply_chunk → complete）。
+     * 记忆提取和技能生成阶段不额外发送事件以简化流。
+     *
+     * @param userMessage   用户输入的文本消息
+     * @param eventCallback 事件回调函数，接收事件 JSON 字符串；为 null 时静默跳过
+     * @return 包含回复、工具调用统计、记忆使用和技能沉淀状态的汇总结果
+     */
+    public AgentResponse executeCycleWithEvents(String userMessage,
+                                                 java.util.function.Consumer<String> eventCallback) {
+        log.info("开始执行agent对话(SSE)，userMessage:{}", userMessage);
         AgentResponse response = new AgentResponse();
         response.setSkillTriggered(false);
 
-        // 1. Search memories and skills
-        Map<String, List<String>> memories = memoryStore.search(userMessage);
+        // 1. Thinking: searching memories
+        sendEvent(eventCallback, "thinking", "正在分析用户消息并搜索相关记忆...");
+        List<String> keywords = extractKeywords(userMessage);
+        Map<String, List<String>> memories;
+        if (keywords.size() == 1 && keywords.get(0).equals(userMessage.trim())) {
+            memories = memoryStore.search(userMessage);
+        } else {
+            memories = memoryStore.searchByKeywords(keywords);
+            if (memories.isEmpty()) {
+                log.info("Keyword search returned empty, falling back to original message search");
+                memories = memoryStore.search(userMessage);
+            }
+        }
+
         Map<String, String> skills = skillManager.match(userMessage);
-        log.info("search skills userMessage:{},result：{}", userMessage, JSON.toJSONString(skills));
         response.setMemoriesUsed(memories.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size())));
+
+        // Send memory event
+        int totalMatches = memories.values().stream().mapToInt(List::size).sum();
+        if (totalMatches > 0) {
+            sendEvent(eventCallback, "memory",
+                    String.format("找到 %d 条相关记忆（关键词: %s）", totalMatches,
+                            String.join(", ", keywords)));
+        } else {
+            sendEvent(eventCallback, "memory", "未找到相关记忆，使用通用知识回答");
+        }
 
         for (String skillName : skills.keySet()) {
             skillManager.incrementScore(skillName);
@@ -133,7 +180,7 @@ public class AgentService {
         // 3. Reset tool counter, call LLM with tool calling via ChatClient
         agentTools.getAndResetToolCallCount();
 
-        String reply;
+        StringBuilder replyBuilder = new StringBuilder();
         try {
             ChatClient chatClient = chatClientBuilder.build();
 
@@ -148,17 +195,28 @@ public class AgentService {
                     .call()
                     .chatResponse();
 
-            reply = chatResponse.getResult().getOutput().getText();
+            replyBuilder.append(chatResponse.getResult().getOutput().getText());
         } catch (Exception e) {
-            reply = "抱歉，AI 服务暂时不可用，请稍后重试。错误: " + e.getMessage();
+            String errorMsg = "抱歉，AI 服务暂时不可用，请稍后重试。错误: " + e.getMessage();
+            replyBuilder.append(errorMsg);
         }
+
+        String reply = replyBuilder.toString();
+
+        // Send reply in chunks (split by sentence boundaries for pseudo-streaming)
+        String[] sentences = reply.split("(?<=[。.！!？?\n])");
+        for (String sentence : sentences) {
+            if (!sentence.isBlank()) {
+                sendEvent(eventCallback, "reply_chunk", sentence.trim());
+            }
+        }
+
         response.setReply(reply);
-        log.info("reply:{}", reply);
 
         int toolCallCount = agentTools.getAndResetToolCallCount();
         response.setToolCallCount(toolCallCount);
 
-        // 4. 二次调用大型语言模型：从对话中提取记忆
+        // 4. Extract memories (same logic as executeCycle)
         String conversation = "用户: " + userMessage + "\n\nAI: " + reply;
         String extractResult;
         try {
@@ -190,10 +248,12 @@ public class AgentService {
         }
 
         int afterCount = countMemoryEntries();
-        response.setNewMemoryCount(afterCount - beforeCount);
+        int newMemories = afterCount - beforeCount;
+        response.setNewMemoryCount(newMemories);
 
-        // 5. 技能沉淀：当工具调用次数达到阈值时生成技能
+        // 5. Skill generation
         if (toolCallCount >= SKILL_THRESHOLD) {
+            sendEvent(eventCallback, "thinking", "工具调用达到阈值，正在生成可复用技能...");
             try {
                 String skillResult = deepSeekChatModel.call(SKILL_GENERATE_PROMPT + conversation);
                 try {
@@ -205,16 +265,49 @@ public class AgentService {
                         response.setNewSkillName(gen.getName());
                     }
                 } catch (Exception e) {
-                    // Skill generation failure doesn't block main flow
                     log.error("Skill generation failure for:", e);
                 }
             } catch (Exception e) {
-                // Skill generation LLM call failure doesn't block main flow
                 log.error("Skill generation LLM call failure for", e);
             }
         }
 
+        // 6. Complete event with summary
+        sendEvent(eventCallback, "complete",
+                String.format("{\"toolCalls\":%d,\"newMemories\":%d,\"skillTriggered\":%s,\"memoriesUsed\":%s}",
+                        toolCallCount, newMemories,
+                        response.isSkillTriggered() ? "\"" + response.getNewSkillName() + "\"" : "null",
+                        JSON.toJSONString(response.getMemoriesUsed())));
+
+        log.info("Agent cycle (SSE) completed. reply length={}, toolCalls={}, newMemories={}",
+                reply.length(), toolCallCount, newMemories);
         return response;
+    }
+
+    /**
+     * 通过回调函数发送 SSE 事件 JSON 字符串。
+     *
+     * @param callback 事件回调（为 null 时静默跳过）
+     * @param type     事件类型（thinking、memory、reply_chunk、complete 等）
+     * @param content  事件内容文本
+     */
+    private void sendEvent(java.util.function.Consumer<String> callback, String type, String content) {
+        if (callback == null) return;
+        try {
+            String escaped = JSON.toJSONString(content);
+            // JSON.toJSONString wraps result in quotes, remove them since we're embedding in a format string
+            if (escaped.startsWith("\"") && escaped.endsWith("\"")) {
+                escaped = escaped.substring(1, escaped.length() - 1);
+            }
+            String eventJson = String.format(
+                    "{\"type\":\"%s\",\"content\":\"%s\",\"timestamp\":\"%s\"}",
+                    type,
+                    escaped,
+                    java.time.LocalDateTime.now().toString().substring(0, 19));
+            callback.accept(eventJson);
+        } catch (Exception e) {
+            log.warn("Failed to send SSE event: type={}", type, e);
+        }
     }
 
     /**
@@ -276,6 +369,54 @@ public class AgentService {
             return JSON.parseObject(json, MemoryExtraction.class);
         } catch (Exception e) {
             return new MemoryExtraction(List.of(), List.of(), List.of());
+        }
+    }
+
+    /**
+     * 使用 LLM 从用户消息中提取搜索关键词。
+     * <p>
+     * 对于短消息（少于 10 字符），跳过 LLM 调用，直接返回原始消息作为唯一关键词。
+     * LLM 调用失败时返回原始消息作为兜底。
+     *
+     * @param userMessage 用户输入的原始消息
+     * @return 提取的关键词列表，至少包含一个元素
+     */
+    List<String> extractKeywords(String userMessage) {
+        if (userMessage == null || userMessage.isBlank()) {
+            return List.of();
+        }
+        // 短消息跳过 LLM 提取
+        if (userMessage.trim().length() < 10) {
+            log.info("Message too short, skipping keyword extraction: '{}'", userMessage);
+            return List.of(userMessage.trim());
+        }
+        try {
+            String result = deepSeekChatModel.call(
+                    new Prompt(KEYWORD_EXTRACT_PROMPT + userMessage,
+                            DeepSeekChatOptions.builder()
+                                    .model("deepseek-chat")
+                                    .temperature(0.0)
+                                    .build()))
+                    .getResult().getOutput().getText();
+            if (result == null || result.isBlank()) {
+                log.warn("LLM returned empty keywords, falling back to original message");
+                return List.of(userMessage.trim());
+            }
+            // 解析逗号分隔的关键词，处理中英文逗号，去重
+            String cleaned = result.trim().replace("，", ",");
+            List<String> keywords = Arrays.stream(cleaned.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isBlank())
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (keywords.isEmpty()) {
+                return List.of(userMessage.trim());
+            }
+            log.info("Extracted keywords for '{}': {}", userMessage, keywords);
+            return keywords;
+        } catch (Exception e) {
+            log.warn("Keyword extraction failed, falling back to original message", e);
+            return List.of(userMessage.trim());
         }
     }
 

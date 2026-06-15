@@ -10,7 +10,7 @@ spring:
       api-key: ${DEEPSEEK-API-KEY}
       chat:
         options:
-          model: deepseek-chat
+          model: deepseek-v4-pro
           # 温度
           temperature: 0.0
           # 最大token数
