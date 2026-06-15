@@ -35,3 +35,4 @@ build/
 ### memory ###
 .memory/
 ai-deepseek/.memory/
+.sandbox/**
