@@ -32,4 +32,18 @@ public class SkillInfo {
 
     /** 技能创建时间（ISO 8601 格式），如 2025-08-25T10:30:00 */
     private String created;
+
+    // ===== 进化相关新字段 =====
+
+    /** 综合有效性评分 (0-100)，由 SkillEvolutionService 每次使用后自动计算 */
+    private int effectiveness;
+
+    /** 技能被匹配使用的总次数 */
+    private int usageCount;
+
+    /** 最后一次被匹配使用的时间（ISO 8601 格式），从未使用过时为 null */
+    private String lastUsed;
+
+    /** 使用成功率 (0-100)：成功次数 / 总匹配次数 × 100 */
+    private int successRate;
 }

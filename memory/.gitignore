@@ -1,0 +1,11 @@
+# 排除 session 追踪数据（可能包含敏感上下文）
+.skill-usage/sessions/*.jsonl
+
+# 排除报告（自动生成）
+.skill-usage/reports/*.md
+
+# 排除导出数据
+.skill-usage/exports/*.json
+
+# 保留目录结构
+!.gitkeep
