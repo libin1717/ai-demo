@@ -17,4 +17,4 @@ spring:
         options:
           # 控制输出随机性
           #temperature: 1.3
-          model: deepseek-chat  # 指定 DeepSeek 的模型
+          model: deepseek-v4-flash  # 指定 DeepSeek 的模型

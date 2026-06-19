@@ -173,7 +173,7 @@ List<String> extractKeywords(String userMessage) {
     try {
         String result = deepSeekChatModel.call(
                 DeepSeekChatOptions.builder()
-                        .model("deepseek-chat")
+                        .model("deepseek-v4-flash")
                         .temperature(0.0)
                         .build(),
                 KEYWORD_EXTRACT_PROMPT + userMessage);
@@ -361,7 +361,7 @@ public AgentResponse executeCycleWithEvents(String userMessage,
                 .user(userMessage)
                 .tools(agentTools)
                 .options(DeepSeekChatOptions.builder()
-                        .model("deepseek-chat")
+                        .model("deepseek-v4-flash")
                         .temperature(0.0)
                         .build())
                 .call()

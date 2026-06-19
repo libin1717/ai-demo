@@ -32,4 +32,7 @@ public class AgentResponse {
 
     /** 本次对话新增的记忆条目数量（提取的新事实 + 偏好 + 决策） */
     private int newMemoryCount;
+
+    /** 本轮对话中匹配到的技能名称列表，无匹配时为空列表 */
+    private List<String> skillsMatched;
 }

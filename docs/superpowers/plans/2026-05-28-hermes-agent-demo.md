@@ -6,7 +6,7 @@
 
 **Architecture:** Spring Boot Controller → AgentService（核心循环：记忆检索 → 技能匹配 → LLM + Tool Calling → 二次 LLM 抽取 → 沉淀）→ MemoryStore/SkillManager 本地文件存储。所有工具操作限制在 .sandbox/ 隔离沙箱内。
 
-**Tech Stack:** Spring Boot 3.5.5, Spring AI 1.0.1, DeepSeek (deepseek-chat 用于 Function Calling，deepseek-reasoner 可选回退), Java 17, Lombok, FastJSON
+**Tech Stack:** Spring Boot 3.5.5, Spring AI 1.0.1, DeepSeek (deepseek-v4-flash 用于 Function Calling，deepseek-reasoner 可选回退), Java 17, Lombok, FastJSON
 
 ---
 
@@ -1050,7 +1050,7 @@ public class AgentService {
         String systemPrompt = buildSystemPrompt(memories, skills);
 
         // 3. 重置工具计数器，然后用 ChatClient 调用 LLM（带 Tool Calling）
-        // DeepSeek 中 deepseek-chat 确认支持 function calling，deepseek-reasoner 可选
+        // DeepSeek 中 deepseek-v4-flash 确认支持 function calling，deepseek-reasoner 可选
         agentTools.getAndResetToolCallCount();
 
         ChatClient chatClient = chatClientBuilder
@@ -1061,7 +1061,7 @@ public class AgentService {
                 .system(systemPrompt)
                 .user(userMessage)
                 .options(DeepSeekChatOptions.builder()
-                        .model("deepseek-chat")
+                        .model("deepseek-v4-flash")
                         .temperature(0.0)
                         .build())
                 .call()

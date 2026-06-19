@@ -81,7 +81,7 @@ SSE 事件设计（统一 SSE event name="agent_event"，具体类型通过 JSON
 
 ## Risks / Trade-offs
 
-- **[额外 LLM 调用开销]** 关键词提取增加 ~0.5-1s 延迟 → 使用 `deepseek-chat` 模型（轻量），设置低 temperature；对于极短消息（<10 字符）跳过提取直接用原消息
+- **[额外 LLM 调用开销]** 关键词提取增加 ~0.5-1s 延迟 → 使用 `deepseek-v4-flash` 模型（轻量），设置低 temperature；对于极短消息（<10 字符）跳过提取直接用原消息
 - **[关键词提取不稳定]** LLM 偶尔返回无关关键词 → 设置兜底：如果所有关键词均无匹配，回退到原始消息全量搜索
 - **[SSE 连接泄漏]** 客户端异常断开 → 遵循现有模式：SseEmitter 1 小时超时 + onCompletion/onError 回调清理
 - **[代码重复]** SseEmitter 管理与现有 Controller 相似 → 提取公共 SSE 管理逻辑到 `SseManager` 工具类

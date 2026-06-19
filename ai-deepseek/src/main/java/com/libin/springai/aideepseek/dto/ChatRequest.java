@@ -13,7 +13,7 @@ import java.util.List;
 @Data
 public class ChatRequest {
     // 指定模型
-    private String model = "deepseek-chat";
+    private String model = "deepseek-v4-flash";
     private List<Message> messages;
     // 明确开启流式传输
     private boolean stream = true;

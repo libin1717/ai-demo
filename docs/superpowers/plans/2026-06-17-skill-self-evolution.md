@@ -568,7 +568,7 @@ public class SkillEvolutionService {
         try {
             String prompt = ENRICH_PROMPT + currentContent + "\n\n最近成功使用上下文：\n" + contextBuilder;
             String result = deepSeekChatModel.call(prompt,
-                    DeepSeekChatOptions.builder().model("deepseek-chat").temperature(0.0).build())
+                    DeepSeekChatOptions.builder().model("deepseek-v4-flash").temperature(0.0).build())
                     .getResult().getOutput().getText();
 
             String json = cleanJson(result);
@@ -1131,7 +1131,7 @@ String existingSkillsJson = JSON.toJSONString(
 boolean isDuplicate = skillManager.checkDuplicate(
         gen.getDescription(), gen.getTriggers(), existingSkillsJson,
         prompt -> deepSeekChatModel.call(prompt,
-                DeepSeekChatOptions.builder().model("deepseek-chat").temperature(0.0).build())
+                DeepSeekChatOptions.builder().model("deepseek-v4-flash").temperature(0.0).build())
                 .getResult().getOutput().getText());
 if (isDuplicate) {
     log.info("Duplicate skill skipped: {} (matches existing skill)", gen.getName());

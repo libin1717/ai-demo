@@ -17,7 +17,7 @@ import java.util.Objects;
 class AiDeepseekApplicationTests {
 
     /**
-     * deepseek-chat 非思考模型
+     * deepseek-v4-flash 非思考模型
      * 阻塞式对话
      */
     @Test
@@ -30,7 +30,7 @@ class AiDeepseekApplicationTests {
     }
 
     /**
-     * deepseek-chat 非思考模型
+     * deepseek-v4-flash 非思考模型
      * <p>
      * 流式对话
      */

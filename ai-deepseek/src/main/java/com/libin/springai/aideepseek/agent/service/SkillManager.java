@@ -29,6 +29,9 @@ public class SkillManager {
     /** 技能文件存储目录路径 */
     static final Path SKILLS_PATH = Paths.get(".memory/skills");
 
+    /** 每个 skill 最多保留的历史版本数 */
+    private static final int MAX_VERSIONS = 10;
+
     /** 服务初始化状态标志，目录创建失败时置为 false */
     private volatile boolean initialized = true;
 
@@ -90,8 +93,12 @@ public class SkillManager {
                 "description: " + description + "\n" +
                 "triggers: " + triggersStr + "\n" +
                 "version: 1\n" +
-                "created: " + timestamp + "\n" +
                 "score: 0\n" +
+                "effectiveness: 0\n" +
+                "usageCount: 0\n" +
+                "successRate: 0\n" +
+                "lastUsed: null\n" +
+                "created: " + timestamp + "\n" +
                 "---\n\n" +
                 content;
 
@@ -176,6 +183,160 @@ public class SkillManager {
     }
 
     /**
+     * 更新技能的进化相关 frontmatter 字段（不改版本号）。
+     * 这些字段随使用自动变化，不触发版本备份。
+     */
+    public synchronized void updateEffectiveness(String name, int effectiveness,
+                                                 int usageCount, int successRate, String lastUsed) {
+        if (!initialized) return;
+        Path skillFile = resolveSkillPath(name);
+        if (skillFile == null || !Files.exists(skillFile)) return;
+        try {
+            String content = Files.readString(skillFile);
+            content = upsertFrontMatterField(content, "effectiveness", String.valueOf(effectiveness));
+            content = upsertFrontMatterField(content, "usageCount", String.valueOf(usageCount));
+            content = upsertFrontMatterField(content, "successRate", String.valueOf(successRate));
+            content = upsertFrontMatterField(content, "lastUsed",
+                    lastUsed != null ? lastUsed : "null");
+            Files.writeString(skillFile, content);
+        } catch (IOException e) {
+            log.error("Failed to update effectiveness for: {}", name, e);
+        }
+    }
+
+    /**
+     * 在 frontmatter 中 upsert 一个字段：已存在则替换值，不存在则在第二个 --- 前追加。
+     */
+    private String upsertFrontMatterField(String content, String key, String value) {
+        String pattern = key + ": .*";
+        if (content.matches("(?s)[\\s\\S]*" + pattern + "[\\s\\S]*")) {
+            return content.replaceAll(pattern, key + ": " + value);
+        } else {
+            int endFm = content.indexOf("---", 3);
+            if (endFm == -1) return content;
+            return content.substring(0, endFm) + key + ": " + value + "\n" + content.substring(endFm);
+        }
+    }
+
+    /**
+     * 更新技能内容，创建版本备份后覆盖主文件。
+     */
+    public synchronized void updateSkill(String name, String newContent,
+                                         String changeType, String changeSummary) {
+        if (!initialized) return;
+        Path skillFile = resolveSkillPath(name);
+        if (skillFile == null || !Files.exists(skillFile)) {
+            log.warn("Skill not found for update: {}", name);
+            return;
+        }
+        try {
+            String currentContent = Files.readString(skillFile);
+            SkillInfo currentInfo = parseFrontMatter(currentContent);
+            if (currentInfo == null) return;
+
+            int currentVersion = currentInfo.getVersion();
+
+            // 1. 备份当前版本
+            Path versionsDir = SKILLS_PATH.resolve(name).resolve("versions");
+            Files.createDirectories(versionsDir);
+            Path versionFile = versionsDir.resolve("v" + currentVersion + ".md");
+            String backupContent = "---\n" +
+                    "version: " + currentVersion + "\n" +
+                    "changeType: " + changeType + "\n" +
+                    "changeSummary: " + changeSummary + "\n" +
+                    "updatedAt: " + LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "\n" +
+                    "---\n\n" + currentContent;
+            Files.writeString(versionFile, backupContent);
+
+            // 2. 清理超出限制的旧版本
+            try (var stream = Files.list(versionsDir)) {
+                List<Path> versionFiles = stream
+                        .filter(p -> p.getFileName().toString().startsWith("v"))
+                        .filter(p -> p.getFileName().toString().endsWith(".md"))
+                        .sorted()
+                        .collect(Collectors.toList());
+                while (versionFiles.size() >= MAX_VERSIONS) {
+                    Path oldest = versionFiles.remove(0);
+                    Files.deleteIfExists(oldest);
+                }
+            }
+
+            // 3. 重写主文件
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            String triggersStr = currentInfo.getTriggers() != null
+                    ? currentInfo.getTriggers().stream()
+                        .map(t -> "\"" + t + "\"")
+                        .collect(Collectors.joining(", ", "[", "]"))
+                    : "[]";
+
+            String updatedMd = "---\n" +
+                    "name: " + name + "\n" +
+                    "description: " + (currentInfo.getDescription() != null ? currentInfo.getDescription() : "") + "\n" +
+                    "triggers: " + triggersStr + "\n" +
+                    "version: " + (currentVersion + 1) + "\n" +
+                    "score: " + currentInfo.getScore() + "\n" +
+                    "effectiveness: " + currentInfo.getEffectiveness() + "\n" +
+                    "usageCount: " + currentInfo.getUsageCount() + "\n" +
+                    "successRate: " + currentInfo.getSuccessRate() + "\n" +
+                    "lastUsed: " + (currentInfo.getLastUsed() != null ? currentInfo.getLastUsed() : "null") + "\n" +
+                    "created: " + (currentInfo.getCreated() != null ? currentInfo.getCreated() : timestamp) + "\n" +
+                    "updatedAt: " + timestamp + "\n" +
+                    "---\n\n" +
+                    newContent;
+
+            Files.writeString(skillFile, updatedMd);
+            log.info("Skill updated: {} v{} -> v{} ({})", name, currentVersion, currentVersion + 1, changeType);
+        } catch (IOException e) {
+            log.error("Failed to update skill: {}", name, e);
+        }
+    }
+
+    /**
+     * 回滚 skill 到指定版本（内部方法，由 SkillEvolutionService 自动调用）。
+     */
+    public synchronized void revertSkill(String name, int targetVersion) {
+        String versionContent = getVersionContent(name, targetVersion);
+        if (versionContent == null) {
+            log.warn("Version {} not found for skill: {}", targetVersion, name);
+            return;
+        }
+        // 从备份文件中提取原始正文（跳过两层 frontmatter：备份元数据 + 原始 frontmatter）
+        String body = versionContent;
+        if (versionContent.startsWith("---")) {
+            int end = versionContent.indexOf("---", 3);
+            if (end != -1) {
+                String afterFirstFm = versionContent.substring(end + 3).trim();
+                if (afterFirstFm.startsWith("---")) {
+                    int end2 = afterFirstFm.indexOf("---", 3);
+                    if (end2 != -1) {
+                        body = afterFirstFm.substring(end2 + 3).trim();
+                    } else {
+                        body = afterFirstFm;
+                    }
+                } else {
+                    body = afterFirstFm;
+                }
+            }
+        }
+        updateSkill(name, body, "revert",
+                "Auto-reverted to v" + targetVersion + " due to effectiveness regression");
+    }
+
+    /**
+     * 获取指定版本的完整内容（内部方法）。
+     */
+    synchronized String getVersionContent(String name, int version) {
+        Path versionFile = SKILLS_PATH.resolve(name).resolve("versions").resolve("v" + version + ".md");
+        if (!Files.exists(versionFile)) return null;
+        try {
+            return Files.readString(versionFile);
+        } catch (IOException e) {
+            log.error("Failed to read version {} for skill: {}", version, name);
+            return null;
+        }
+    }
+
+    /**
      * 列出所有已存储的技能信息。
      *
      * @return 技能信息列表，无技能时返回空列表
@@ -255,6 +416,18 @@ public class SkillManager {
                             .filter(s -> !s.isEmpty())
                             .collect(Collectors.toList()));
                     break;
+                case "effectiveness":
+                    info.setEffectiveness(Integer.parseInt(value));
+                    break;
+                case "usageCount":
+                    info.setUsageCount(Integer.parseInt(value));
+                    break;
+                case "successRate":
+                    info.setSuccessRate(Integer.parseInt(value));
+                    break;
+                case "lastUsed":
+                    info.setLastUsed("null".equals(value) ? null : value);
+                    break;
             }
         }
         return info;
@@ -266,9 +439,35 @@ public class SkillManager {
      * @param content 完整的技能文档内容
      * @return front matter 之后的正文，无 front matter 时返回原文
      */
-    private String extractBody(String content) {
+    String extractBody(String content) {
         int end = content.indexOf("---", 3);
         if (end == -1) return content;
         return content.substring(end + 3).trim();
+    }
+
+    /**
+     * 语义去重检查——通过 LLM 判断候选 skill 是否与已有 skill 高度重复。
+     * 如果 LLM 调用失败，默认返回 false（fail-open：不阻止创建）。
+     */
+    public boolean checkDuplicate(String candidateDescription,
+                                  List<String> candidateTriggers,
+                                  String existingSkillsJson,
+                                  java.util.function.Function<String, String> llmCaller) {
+        if (existingSkillsJson == null || existingSkillsJson.equals("[]")) return false;
+
+        String prompt = "候选新技能：\n" +
+                "描述：" + candidateDescription + "\n" +
+                "触发词：" + String.join(", ", candidateTriggers) + "\n\n" +
+                "已有技能列表：\n" + existingSkillsJson + "\n\n" +
+                "请判断候选新技能是否与已有技能中的某一个高度重复（覆盖相同的任务场景）。" +
+                "仅回复 YES 或 NO。";
+
+        try {
+            String response = llmCaller.apply(prompt);
+            return response != null && response.trim().toUpperCase().contains("YES");
+        } catch (Exception e) {
+            log.warn("Dedup check failed (fail-open): {}", e.getMessage());
+            return false;
+        }
     }
 }

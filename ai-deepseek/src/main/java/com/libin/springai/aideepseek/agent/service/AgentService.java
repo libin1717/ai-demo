@@ -3,6 +3,7 @@ package com.libin.springai.aideepseek.agent.service;
 import com.alibaba.fastjson.JSON;
 import com.libin.springai.aideepseek.agent.dto.AgentResponse;
 import com.libin.springai.aideepseek.agent.dto.MemoryExtraction;
+import com.libin.springai.aideepseek.agent.dto.SkillInfo;
 import com.libin.springai.aideepseek.agent.tool.AgentTools;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -13,6 +14,7 @@ import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +51,12 @@ public class AgentService {
 
     @Autowired
     private AgentTools agentTools;
+
+    @Autowired
+    private SkillUsageTracker skillUsageTracker;
+
+    @Autowired
+    private SkillEvolutionService skillEvolutionService;
 
     /**
      * 触发技能生成的工具调用次数阈值
@@ -159,6 +167,21 @@ public class AgentService {
         response.setMemoriesUsed(memories.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size())));
 
+        // === 进化追踪：记录 skill 匹配 + 自动评分 ===
+        List<String> matchedSkillNames = new ArrayList<>(skills.keySet());
+        response.setSkillsMatched(matchedSkillNames);
+
+        if (!matchedSkillNames.isEmpty()) {
+            String digest = userMessage.length() > 200
+                    ? userMessage.substring(0, 200) : userMessage;
+            for (String skillName : matchedSkillNames) {
+                skillUsageTracker.recordMatch(skillName,
+                        getTriggersForSkill(skillName), digest, 0);
+                skillEvolutionService.recalculateScore(skillName);
+            }
+        }
+        // === 追踪结束 ===
+
         // Send memory event
         int totalMatches = memories.values().stream().mapToInt(List::size).sum();
         if (totalMatches > 0) {
@@ -167,10 +190,6 @@ public class AgentService {
                             String.join(", ", keywords)));
         } else {
             sendEvent(eventCallback, "memory", "未找到相关记忆，使用通用知识回答");
-        }
-
-        for (String skillName : skills.keySet()) {
-            skillManager.incrementScore(skillName);
         }
 
         // 2. Build system prompt
@@ -189,7 +208,7 @@ public class AgentService {
                     .user(userMessage)
                     .tools(agentTools)
                     .options(DeepSeekChatOptions.builder()
-                            .model("deepseek-chat")
+                            .model("deepseek-v4-flash")
                             .temperature(0.0)
                             .build())
                     .call()
@@ -199,6 +218,11 @@ public class AgentService {
         } catch (Exception e) {
             String errorMsg = "抱歉，AI 服务暂时不可用，请稍后重试。错误: " + e.getMessage();
             replyBuilder.append(errorMsg);
+            // === 进化追踪：记录失败结果 ===
+            if (!matchedSkillNames.isEmpty()) {
+                skillUsageTracker.recordOutcome(matchedSkillNames, "failure", 0, e.getMessage());
+            }
+            // === 追踪结束 ===
         }
 
         String reply = replyBuilder.toString();
@@ -215,6 +239,20 @@ public class AgentService {
 
         int toolCallCount = agentTools.getAndResetToolCallCount();
         response.setToolCallCount(toolCallCount);
+
+        // === 进化追踪：记录执行结果 + 自动富化 + 退化检测 ===
+        if (!matchedSkillNames.isEmpty()) {
+            skillUsageTracker.recordOutcome(matchedSkillNames, "success", toolCallCount, null);
+            for (String skillName : matchedSkillNames) {
+                int newScore = skillEvolutionService.recalculateScore(skillName);
+                if (skillEvolutionService.checkEnrichmentThreshold(skillName)) {
+                    log.info("Enrichment threshold reached for skill: {}", skillName);
+                    skillEvolutionService.generateAndApplyEnrichment(skillName);
+                }
+                skillEvolutionService.detectAndRevertRegression(skillName, newScore);
+            }
+        }
+        // === 进化追踪结束 ===
 
         // 4. Extract memories (same logic as executeCycle)
         String conversation = "用户: " + userMessage + "\n\nAI: " + reply;
@@ -259,10 +297,33 @@ public class AgentService {
                 try {
                     SkillGeneration gen = parseSkillGeneration(skillResult);
                     if (gen != null && gen.getName() != null) {
-                        skillManager.createSkill(gen.getName(), gen.getDescription(),
-                                gen.getTriggers(), gen.getContent());
-                        response.setSkillTriggered(true);
-                        response.setNewSkillName(gen.getName());
+                        // 去重检查
+                        String existingSkillsJson = JSON.toJSONString(
+                                skillManager.listAll().stream()
+                                        .map(s -> {
+                                            java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                                            m.put("name", s.getName());
+                                            m.put("description", s.getDescription());
+                                            m.put("triggers", s.getTriggers());
+                                            return m;
+                                        })
+                                        .collect(Collectors.toList()));
+                        boolean isDuplicate = skillManager.checkDuplicate(
+                                gen.getDescription(), gen.getTriggers(), existingSkillsJson,
+                                prompt -> deepSeekChatModel.call(
+                                        new org.springframework.ai.chat.prompt.Prompt(prompt,
+                                                DeepSeekChatOptions.builder().model("deepseek-v4-flash").temperature(0.0).build()))
+                                        .getResult().getOutput().getText());
+                        if (isDuplicate) {
+                            log.info("Duplicate skill skipped: {} (matches existing skill)", gen.getName());
+                        } else {
+                            skillManager.createSkill(gen.getName(), gen.getDescription(),
+                                    gen.getTriggers(), gen.getContent());
+                            response.setSkillTriggered(true);
+                            response.setNewSkillName(gen.getName());
+                            // 追踪创建事件
+                            skillUsageTracker.recordCreation(gen.getName(), gen.getDescription(), gen.getTriggers());
+                        }
                     }
                 } catch (Exception e) {
                     log.error("Skill generation failure for:", e);
@@ -394,7 +455,7 @@ public class AgentService {
             String result = deepSeekChatModel.call(
                     new Prompt(KEYWORD_EXTRACT_PROMPT + userMessage,
                             DeepSeekChatOptions.builder()
-                                    .model("deepseek-chat")
+                                    .model("deepseek-v4-flash")
                                     .temperature(0.0)
                                     .build()))
                     .getResult().getOutput().getText();
@@ -500,5 +561,14 @@ public class AgentService {
         public String getContent() {
             return content;
         }
+    }
+
+    /**
+     * 获取指定 skill 的 triggers 列表。
+     */
+    private List<String> getTriggersForSkill(String skillName) {
+        SkillInfo info = skillManager.parseFrontMatter(skillManager.getByName(skillName));
+        return info != null && info.getTriggers() != null
+                ? info.getTriggers() : List.of();
     }
 }
